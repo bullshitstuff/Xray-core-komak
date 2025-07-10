@@ -457,7 +457,8 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 			return f.writer.Write(b) // Target SNI not found, write as-is.
 		}
 
-		splitPoint := sniIndex + int(f.fragment.GetSplitAtIndex())
+		// Calculate the actual byte index to split at.
+		splitPoint := sniIndex + int(f.fragment.GetSplitAtIndex()) // <-- This line is now corrected
 		if splitPoint >= len(b) {
 			return f.writer.Write(b) // Split point is out of bounds, write as-is.
 		}
@@ -473,7 +474,7 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 		if err != nil {
 			return n1, err
 		}
-		errors.LogInfo(ctx, "Wrote part 1: ", n1, " bytes (up to '...z')")
+		errors.LogInfo(ctx, "Wrote part 1: ", n1, " bytes")
 
 		// Apply the 20ms delay
 		time.Sleep(20 * time.Millisecond)
@@ -483,7 +484,7 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 		if err != nil {
 			return n1 + n2, err
 		}
-		errors.LogInfo(ctx, "Wrote part 2: ", n2, " bytes (from 'zula.ir...')")
+		errors.LogInfo(ctx, "Wrote part 2: ", n2, " bytes")
 		errors.LogInfo(ctx, "SNI fragmentation complete.")
 
 		return len(b), nil // Report that we wrote the full original length

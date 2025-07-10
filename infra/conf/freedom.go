@@ -69,39 +69,29 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 
 	if c.Fragment != nil {
 		config.Fragment = new(freedom.Fragment)
+		isCustomSNI := strings.ToLower(c.Fragment.Packets) == "tlshello_sni"
 
-		// --- Start of replacement ---
 		switch strings.ToLower(c.Fragment.Packets) {
 		case "tlshello_sni":
-			// Our custom SNI splitting logic
 			if c.Fragment.SNIToSplit == "" {
-				return nil, errors.New("SNIToSplit can't be empty for tlshello_sni")
+				return nil, errors.New("sniToSplit can't be empty for tlshello_sni")
 			}
 			if c.Fragment.SplitAtIndex == 0 {
-				return nil, errors.New("SplitAtIndex can't be 0 for tlshello_sni")
+				return nil, errors.New("splitAtIndex can't be 0 for tlshello_sni")
 			}
-			config.Fragment.SNIToSplit = c.Fragment.SNIToSplit
+			// Corrected capitalization for protobuf-generated struct fields
+			config.Fragment.SniToSplit = c.Fragment.SNIToSplit
 			config.Fragment.SplitAtIndex = c.Fragment.SplitAtIndex
 		case "tlshello":
-			// Original TLS Hello Fragmentation
+			// TLS Hello Fragmentation (into multiple handshake messages)
 			config.Fragment.PacketsFrom = 0
 			config.Fragment.PacketsTo = 1
-			if c.Fragment.Length == nil || c.Fragment.Length.From == 0 {
-				return nil, errors.New("Length can't be empty or 0 for tlshello")
-			}
-			config.Fragment.LengthMin = uint64(c.Fragment.Length.From)
-			config.Fragment.LengthMax = uint64(c.Fragment.Length.To)
-			if c.Fragment.Interval == nil {
-				return nil, errors.New("Interval can't be empty for tlshello")
-			}
-			config.Fragment.IntervalMin = uint64(c.Fragment.Interval.From)
-			config.Fragment.IntervalMax = uint64(c.Fragment.Interval.To)
 		case "":
-			// Original TCP Segmentation (all packets)
+			// TCP Segmentation (all packets)
 			config.Fragment.PacketsFrom = 0
 			config.Fragment.PacketsTo = 0
 		default:
-			// Original TCP Segmentation (range)
+			// TCP Segmentation (range)
 			from, to, err := ParseRangeString(c.Fragment.Packets)
 			if err != nil {
 				return nil, errors.New("Invalid PacketsFrom").Base(err)
@@ -113,8 +103,7 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 			}
 		}
 
-		// Common validation for modes that use Length and Interval
-		if strings.ToLower(c.Fragment.Packets) != "tlshello_sni" {
+		if !isCustomSNI { // Skip length/interval validation for our custom mode
 			if c.Fragment.Length == nil {
 				return nil, errors.New("Length can't be empty")
 			}
@@ -130,7 +119,6 @@ func (c *FreedomConfig) Build() (proto.Message, error) {
 			config.Fragment.IntervalMin = uint64(c.Fragment.Interval.From)
 			config.Fragment.IntervalMax = uint64(c.Fragment.Interval.To)
 		}
-		// --- End of replacement ---
 	}
 
 	if c.Noise != nil {
