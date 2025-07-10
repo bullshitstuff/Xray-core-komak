@@ -585,7 +585,7 @@ func CopyRawConnIfExist(ctx context.Context, readerConn net.Conn, writerConn net
 	for {
 		inbound := session.InboundFromContext(ctx)
 		outbounds := session.OutboundsFromContext(ctx)
-		var splice = inbound.CanSpliceCopy == 1
+		splice := inbound.CanSpliceCopy == 1
 		for _, ob := range outbounds {
 			if ob.CanSpliceCopy != 1 {
 				splice = false
@@ -594,7 +594,7 @@ func CopyRawConnIfExist(ctx context.Context, readerConn net.Conn, writerConn net
 		if splice {
 			errors.LogInfo(ctx, "CopyRawConn splice")
 			statWriter, _ := writer.(*dispatcher.SizeStatWriter)
-			//runtime.Gosched() // necessary
+			// runtime.Gosched() // necessary
 			time.Sleep(time.Millisecond)    // without this, there will be a rare ssl error for freedom splice
 			timer.SetTimeout(8 * time.Hour) // prevent leak, just in case
 			if inTimer != nil {

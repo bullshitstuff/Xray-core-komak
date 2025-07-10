@@ -1,6 +1,7 @@
 package freedom
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"io"
@@ -335,7 +336,6 @@ func NewPacketWriter(conn net.Conn, h *Handler, ctx context.Context, UDPOverride
 			Context:           ctx,
 			UDPOverride:       UDPOverride,
 		}
-
 	}
 	return &buf.SequentialWriter{Writer: conn}
 }
@@ -402,18 +402,18 @@ type NoisePacketWriter struct {
 func (w *NoisePacketWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 	if w.firstWrite {
 		w.firstWrite = false
-		//Do not send Noise for dns requests(just to be safe)
+		// Do not send Noise for dns requests(just to be safe)
 		if w.UDPOverride.Port == 53 {
 			return w.Writer.WriteMultiBuffer(mb)
 		}
 		var noise []byte
 		var err error
 		for _, n := range w.noises {
-			//User input string or base64 encoded string
+			// User input string or base64 encoded string
 			if n.Packet != nil {
 				noise = n.Packet
 			} else {
-				//Random noise
+				// Random noise
 				noise, err = GenerateRandomBytes(crypto.RandBetween(int64(n.LengthMin),
 					int64(n.LengthMax)))
 			}
@@ -439,13 +439,63 @@ type FragmentWriter struct {
 
 func (f *FragmentWriter) Write(b []byte) (int, error) {
 	f.count++
+	ctx := context.Background() // For logging
 
+	// Our new custom SNI fragmentation logic
+	if f.fragment.GetSniToSplit() != "" {
+		// This logic only applies to the first packet, which should be the ClientHello.
+		// We check for the TLS Handshake content type (22) and Client Hello message type (1).
+		if f.count != 1 || len(b) < 6 || b[0] != 22 || b[5] != 1 {
+			return f.writer.Write(b) // Not a ClientHello, write as-is.
+		}
+
+		// Search for the target SNI within the packet
+		sniBytes := []byte(f.fragment.GetSniToSplit())
+		sniIndex := bytes.Index(b, sniBytes)
+
+		if sniIndex == -1 {
+			return f.writer.Write(b) // Target SNI not found, write as-is.
+		}
+
+		splitPoint := sniIndex + int(f.fragment.GetSplitAtIndex())
+		if splitPoint >= len(b) {
+			return f.writer.Write(b) // Split point is out of bounds, write as-is.
+		}
+
+		// --- Fragmentation and Logging ---
+		errors.LogInfo(ctx, "Custom SNI fragmentation triggered for: ", f.fragment.GetSniToSplit())
+
+		part1 := b[:splitPoint]
+		part2 := b[splitPoint:]
+
+		// Write the first part
+		n1, err := f.writer.Write(part1)
+		if err != nil {
+			return n1, err
+		}
+		errors.LogInfo(ctx, "Wrote part 1: ", n1, " bytes (up to '...z')")
+
+		// Apply the 20ms delay
+		time.Sleep(20 * time.Millisecond)
+
+		// Write the second part
+		n2, err := f.writer.Write(part2)
+		if err != nil {
+			return n1 + n2, err
+		}
+		errors.LogInfo(ctx, "Wrote part 2: ", n2, " bytes (from 'zula.ir...')")
+		errors.LogInfo(ctx, "SNI fragmentation complete.")
+
+		return len(b), nil // Report that we wrote the full original length
+	}
+
+	// Original tlshello fragmentation logic
 	if f.fragment.PacketsFrom == 0 && f.fragment.PacketsTo == 1 {
 		if f.count != 1 || len(b) <= 5 || b[0] != 22 {
 			return f.writer.Write(b)
 		}
 		recordLen := 5 + ((int(b[3]) << 8) | int(b[4]))
-		if len(b) < recordLen { // maybe already fragmented somehow
+		if len(b) < recordLen {
 			return f.writer.Write(b)
 		}
 		data := b[5:recordLen]
@@ -462,7 +512,7 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 			from = to
 			buf[3] = byte(l >> 8)
 			buf[4] = byte(l)
-			if f.fragment.IntervalMax == 0 { // combine fragmented tlshello if interval is 0
+			if f.fragment.IntervalMax == 0 {
 				hello = append(hello, buf[:5+l]...)
 			} else {
 				_, err := f.writer.Write(buf[:5+l])
@@ -489,6 +539,7 @@ func (f *FragmentWriter) Write(b []byte) (int, error) {
 		}
 	}
 
+	// Original TCP packet fragmentation logic
 	if f.fragment.PacketsFrom != 0 && (f.count < f.fragment.PacketsFrom || f.count > f.fragment.PacketsTo) {
 		return f.writer.Write(b)
 	}

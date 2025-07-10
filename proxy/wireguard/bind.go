@@ -9,11 +9,10 @@ import (
 	"strconv"
 	"sync"
 
-	"golang.zx2c4.com/wireguard/conn"
-
 	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/transport/internet"
+	"golang.zx2c4.com/wireguard/conn"
 )
 
 type netReadInfo struct {

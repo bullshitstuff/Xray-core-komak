@@ -19,6 +19,8 @@ message Fragment {
   uint64 length_max = 4;
   uint64 interval_min = 5;
   uint64 interval_max = 6;
+  string sni_to_split = 7;
+  uint64 split_at_index = 8;
 }
 message Noise {
   uint64 length_min = 1;
